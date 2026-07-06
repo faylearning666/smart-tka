@@ -44,24 +44,38 @@ def connect_db():
 
 
 def tambah_kolom_jika_belum_ada(cur, nama_tabel, nama_kolom, tipe_data):
+    # Cek dulu apakah tabelnya sudah ada
+    cur.execute("""
+    SELECT name 
+    FROM sqlite_master 
+    WHERE type='table' AND name=?
+    """, (nama_tabel,))
+
+    if cur.fetchone() is None:
+        return
+
+    # Cek apakah kolom sudah ada
     cur.execute(f"PRAGMA table_info({nama_tabel})")
     kolom = [row[1] for row in cur.fetchall()]
 
     if nama_kolom not in kolom:
         cur.execute(f"ALTER TABLE {nama_tabel} ADD COLUMN {nama_kolom} {tipe_data}")
 
-
 def init_db():
     conn = connect_db()
     cur = conn.cursor()
 
+    # =========================
+    # 1. TABEL USER & ROLE
+    # =========================
     cur.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE,
         password TEXT,
         role TEXT,
-        nama TEXT
+        nama TEXT,
+        status_akun TEXT DEFAULT 'aktif'
     )
     """)
 
@@ -101,6 +115,9 @@ def init_db():
     )
     """)
 
+    # =========================
+    # 2. TABEL TRY OUT
+    # =========================
     cur.execute("""
     CREATE TABLE IF NOT EXISTS hasil_tryout (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -112,62 +129,6 @@ def init_db():
         rekomendasi TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (siswa_id) REFERENCES siswa(id)
-    )
-    """)
-
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS bank_soal (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        mapel TEXT,
-        topik TEXT,
-        level TEXT,
-        pertanyaan TEXT,
-        opsi_a TEXT,
-        opsi_b TEXT,
-        opsi_c TEXT,
-        opsi_d TEXT,
-        jawaban TEXT,
-        pembahasan TEXT
-    )
-    """)
-
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS materi (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        judul TEXT,
-        filename TEXT,
-        isi_teks TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-    """)
-
-    # Aman untuk database lama
-    tambah_kolom_jika_belum_ada(cur, "bank_soal", "topik", "TEXT")
-    tambah_kolom_jika_belum_ada(cur, "bank_soal", "level", "TEXT")
-    tambah_kolom_jika_belum_ada(cur, "hasil_tryout", "mapel", "TEXT")
-    tambah_kolom_jika_belum_ada(cur, "users", "status_akun", "TEXT")
-    tambah_kolom_jika_belum_ada(cur, "jadwal_belajar_detail", "fokus_belajar", "TEXT")
-    tambah_kolom_jika_belum_ada(cur, "jadwal_belajar_detail", "materi_harian", "TEXT")
-    tambah_kolom_jika_belum_ada(cur, "jadwal_belajar_detail", "latihan_disarankan", "TEXT")
-    tambah_kolom_jika_belum_ada(cur, "jadwal_belajar_detail", "topik_spesifik", "TEXT")
-    tambah_kolom_jika_belum_ada(cur, "jadwal_belajar_detail", "konteks_kelemahan", "TEXT")
-    tambah_kolom_jika_belum_ada(cur, "jadwal_belajar", "jam_belajar", "TEXT")
-    tambah_kolom_jika_belum_ada(cur, "jadwal_belajar", "reminder_aktif", "TEXT")
-
-    cur.execute("""
-    UPDATE users 
-    SET status_akun = 'aktif' 
-    WHERE status_akun IS NULL OR status_akun = ''
-    """)
-
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS materi_chunk (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        materi_id INTEGER,
-        judul TEXT,
-        isi_chunk TEXT,
-        urutan INTEGER,
-        FOREIGN KEY (materi_id) REFERENCES materi(id)
     )
     """)
 
@@ -190,6 +151,52 @@ def init_db():
     )
     """)
 
+    # =========================
+    # 3. TABEL BANK SOAL
+    # =========================
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS bank_soal (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        mapel TEXT,
+        topik TEXT,
+        level TEXT,
+        pertanyaan TEXT,
+        opsi_a TEXT,
+        opsi_b TEXT,
+        opsi_c TEXT,
+        opsi_d TEXT,
+        jawaban TEXT,
+        pembahasan TEXT
+    )
+    """)
+
+    # =========================
+    # 4. TABEL MATERI & CHUNK
+    # =========================
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS materi (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        judul TEXT,
+        filename TEXT,
+        isi_teks TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS materi_chunk (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        materi_id INTEGER,
+        judul TEXT,
+        isi_chunk TEXT,
+        urutan INTEGER,
+        FOREIGN KEY (materi_id) REFERENCES materi(id)
+    )
+    """)
+
+    # =========================
+    # 5. TABEL REGISTRASI ORTU & SISWA
+    # =========================
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pendaftaran_ortu_siswa (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -216,6 +223,9 @@ def init_db():
     )
     """)
 
+    # =========================
+    # 6. TABEL JADWAL BELAJAR
+    # =========================
     cur.execute("""
     CREATE TABLE IF NOT EXISTS jadwal_belajar (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -225,6 +235,8 @@ def init_db():
         jumlah_hari INTEGER,
         target_nilai INTEGER,
         waktu_per_hari TEXT,
+        jam_belajar TEXT,
+        reminder_aktif TEXT,
         catatan_ai TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (siswa_id) REFERENCES siswa(id)
@@ -239,24 +251,123 @@ def init_db():
         tanggal TEXT,
         topik TEXT,
         level TEXT,
+        topik_spesifik TEXT,
+        konteks_kelemahan TEXT,
+        fokus_belajar TEXT,
+        materi_harian TEXT,
+        latihan_disarankan TEXT,
         aktivitas TEXT,
         status TEXT DEFAULT 'belum',
         FOREIGN KEY (jadwal_id) REFERENCES jadwal_belajar(id)
     )
     """)
 
+    # =========================
+    # 7. MIGRASI AMAN UNTUK DATABASE LAMA
+    # =========================
+
+    # Users
+    tambah_kolom_jika_belum_ada(cur, "users", "status_akun", "TEXT")
+
+    # Bank soal
+    tambah_kolom_jika_belum_ada(cur, "bank_soal", "topik", "TEXT")
+    tambah_kolom_jika_belum_ada(cur, "bank_soal", "level", "TEXT")
+
+    # Hasil tryout
+    tambah_kolom_jika_belum_ada(cur, "hasil_tryout", "mapel", "TEXT")
+
+    # Jadwal belajar
+    tambah_kolom_jika_belum_ada(cur, "jadwal_belajar", "jam_belajar", "TEXT")
+    tambah_kolom_jika_belum_ada(cur, "jadwal_belajar", "reminder_aktif", "TEXT")
+
+    # Jadwal belajar detail
+    tambah_kolom_jika_belum_ada(cur, "jadwal_belajar_detail", "fokus_belajar", "TEXT")
+    tambah_kolom_jika_belum_ada(cur, "jadwal_belajar_detail", "materi_harian", "TEXT")
+    tambah_kolom_jika_belum_ada(cur, "jadwal_belajar_detail", "latihan_disarankan", "TEXT")
+    tambah_kolom_jika_belum_ada(cur, "jadwal_belajar_detail", "topik_spesifik", "TEXT")
+    tambah_kolom_jika_belum_ada(cur, "jadwal_belajar_detail", "konteks_kelemahan", "TEXT")
+
+    # Pastikan akun lama aktif
+    cur.execute("""
+    UPDATE users 
+    SET status_akun = 'aktif' 
+    WHERE status_akun IS NULL OR status_akun = ''
+    """)
+
+    # =========================
+    # 8. SEED USER DEMO
+    # =========================
     cur.execute("SELECT COUNT(*) FROM users")
+
     if cur.fetchone()[0] == 0:
         cur.executemany("""
-        INSERT INTO users (username, password, role, nama)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO users (username, password, role, nama, status_akun)
+        VALUES (?, ?, ?, ?, ?)
         """, [
-            ("admin", "admin123", "admin", "Admin"),
-            ("siswa", "siswa123", "siswa", "Siswa Demo"),
-            ("ortu", "ortu123", "ortu", "Orang Tua Demo"),
+            ("admin", "admin123", "admin", "Admin", "aktif"),
+            ("siswa", "siswa123", "siswa", "Siswa Demo", "aktif"),
+            ("ortu", "ortu123", "ortu", "Orang Tua Demo", "aktif"),
         ])
 
+    # =========================
+    # 9. SEED PROFIL DEMO SISWA & ORTU
+    # =========================
+
+    # Ambil user siswa demo
+    cur.execute("SELECT id FROM users WHERE username='siswa'")
+    row_siswa_user = cur.fetchone()
+
+    if row_siswa_user:
+        user_siswa_id = row_siswa_user[0]
+
+        cur.execute("SELECT COUNT(*) FROM siswa WHERE user_id=?", (user_siswa_id,))
+        if cur.fetchone()[0] == 0:
+            cur.execute("""
+            INSERT INTO siswa (user_id, nama, kelas, sekolah, email)
+            VALUES (?, ?, ?, ?, ?)
+            """, (
+                user_siswa_id,
+                "Siswa Demo",
+                "3",
+                "Sekolah Demo",
+                "siswa.demo@email.com"
+            ))
+
+    # Ambil data siswa demo setelah dibuat
+    cur.execute("""
+    SELECT siswa.id
+    FROM siswa
+    JOIN users ON siswa.user_id = users.id
+    WHERE users.username='siswa'
+    """)
+    row_siswa = cur.fetchone()
+
+    cur.execute("SELECT id FROM users WHERE username='ortu'")
+    row_ortu_user = cur.fetchone()
+
+    if row_siswa and row_ortu_user:
+        siswa_demo_id = row_siswa[0]
+        user_ortu_id = row_ortu_user[0]
+
+        cur.execute("SELECT COUNT(*) FROM ortu WHERE user_id=?", (user_ortu_id,))
+        if cur.fetchone()[0] == 0:
+            cur.execute("""
+            INSERT INTO ortu (user_id, siswa_id, nama, hubungan, email, no_hp)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                user_ortu_id,
+                siswa_demo_id,
+                "Orang Tua Demo",
+                "Ibu",
+                "ortu.demo@email.com",
+                "081234567890"
+            ))
+
+    # =========================
+    # 10. SEED BANK SOAL DEMO
+    # =========================
     cur.execute("SELECT COUNT(*) FROM bank_soal")
+
     if cur.fetchone()[0] == 0:
         cur.executemany("""
         INSERT INTO bank_soal
@@ -268,7 +379,10 @@ def init_db():
                 "Perkalian Dasar",
                 "Mudah",
                 "Hasil dari 12 x 8 adalah...",
-                "80", "88", "96", "108",
+                "80",
+                "88",
+                "96",
+                "108",
                 "C",
                 "12 x 8 = 96."
             ),
@@ -277,12 +391,30 @@ def init_db():
                 "Sinonim",
                 "Mudah",
                 "Sinonim dari kata efektif adalah...",
-                "Tepat guna", "Lambat", "Rumit", "Sia-sia",
+                "Tepat guna",
+                "Lambat",
+                "Rumit",
+                "Sia-sia",
                 "A",
                 "Efektif berarti berhasil guna atau tepat guna."
+            ),
+            (
+                "Bahasa Inggris",
+                "Vocabulary",
+                "Mudah",
+                "What is the meaning of 'book' in Indonesian?",
+                "Meja",
+                "Buku",
+                "Kursi",
+                "Pensil",
+                "B",
+                "'Book' berarti 'buku' dalam bahasa Indonesia."
             )
         ])
 
+    # =========================
+    # 11. MIGRASI ISI DATA LAMA
+    # =========================
     cur.execute("UPDATE bank_soal SET mapel='Matematika' WHERE mapel='Numerasi'")
     cur.execute("UPDATE bank_soal SET mapel='Bahasa Indonesia' WHERE mapel='Literasi'")
     cur.execute("UPDATE bank_soal SET mapel='Bahasa Indonesia' WHERE mapel='Penalaran Umum'")
