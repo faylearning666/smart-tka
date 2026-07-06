@@ -1392,15 +1392,6 @@ def page_login():
         else:
             st.error("Username atau password salah")
 
-    st.info("""
-    Akun demo:
-
-    admin / admin123  
-    siswa / siswa123  
-    ortu / ortu123
-    """)
-
-
 # =========================
 # DASHBOARD
 # =========================
