@@ -8,15 +8,15 @@ import docx
 import json
 import re
 import html
-from io import BytesIO
+import uuid
 
+from io import BytesIO
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib import colors
 from reportlab.lib.units import cm
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-
 from datetime import date
 
 DB_NAME = "tka_mvp.db"
@@ -60,6 +60,7 @@ def tambah_kolom_jika_belum_ada(cur, nama_tabel, nama_kolom, tipe_data):
 
     if nama_kolom not in kolom:
         cur.execute(f"ALTER TABLE {nama_tabel} ADD COLUMN {nama_kolom} {tipe_data}")
+
 
 def init_db():
     conn = connect_db()
@@ -262,6 +263,19 @@ def init_db():
     )
     """)
 
+    # TABEL VISITOR WEB
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS visitor_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT,
+        halaman TEXT,
+        role TEXT,
+        username TEXT,
+        tanggal TEXT,
+        waktu TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
     # =========================
     # 7. MIGRASI AMAN UNTUK DATABASE LAMA
     # =========================
@@ -422,6 +436,7 @@ def init_db():
     conn.commit()
     conn.close()
 
+
 # =========================
 # FUNGSI NAIK TURUN LEVEL UNTUK ADAPTIVE LEARNING
 # =========================
@@ -459,6 +474,7 @@ def tentukan_level_berikutnya(akurasi, level_terakhir, total_dikerjakan):
 
     else:
         return level_terakhir
+
 
 # =========================
 # AMBIL SOAL ADAPTIVE LEARNING
@@ -545,20 +561,20 @@ def ambil_soal_adaptif(siswa_id, mapel, jumlah_soal=10):
             (df_soal_all["topik"] == topik) &
             (df_soal_all["level"] == level_target) &
             (~df_soal_all["id"].isin(recent_soal_ids))
-        ]
+            ]
 
         # fallback 1: topik sama, level bebas, belum pernah baru-baru ini
         if kandidat.empty:
             kandidat = df_soal_all[
                 (df_soal_all["topik"] == topik) &
                 (~df_soal_all["id"].isin(recent_soal_ids))
-            ]
+                ]
 
         # fallback 2: topik sama, soal apa saja
         if kandidat.empty:
             kandidat = df_soal_all[
                 df_soal_all["topik"] == topik
-            ]
+                ]
 
         if not kandidat.empty:
             soal_terpilih.append(kandidat.sample(1).iloc[0])
@@ -603,6 +619,7 @@ def ambil_soal_adaptif(siswa_id, mapel, jumlah_soal=10):
 
     return df_terpilih, df_info
 
+
 # =========================
 # LLM
 # =========================
@@ -642,6 +659,7 @@ def ask_llm(prompt):
 
     return response.choices[0].message.content
 
+
 # =========================
 # AUTH
 # =========================
@@ -667,9 +685,10 @@ def login(username, password):
 
     return user
 
-#=========================
-#ambil ID siswa dan ortu
-#=========================
+
+# =========================
+# ambil ID siswa dan ortu
+# =========================
 def get_siswa_id_by_username(username):
     conn = connect_db()
     cur = conn.cursor()
@@ -731,6 +750,7 @@ def username_sudah_dipakai(username):
     conn.close()
 
     return jumlah_users > 0 or jumlah_pending > 0
+
 
 # =================
 # HALAMAN REGISTER ORANG TUA
@@ -807,6 +827,7 @@ def page_register_ortu():
                 st.code(str(e))
 
             conn.close()
+
 
 # =================
 # HALAMAN VERIFIKASI ADMIN NERIMA ORTU DAN SISWA
@@ -901,12 +922,12 @@ def page_verifikasi_register():
         st.subheader("Registrasi Ditolak")
         st.dataframe(df[df["status"] == "ditolak"], use_container_width=True)
 
-
     conn.close()
 
-#================
-#TERIMA REGISTRASI
-#================
+
+# ================
+# TERIMA REGISTRASI
+# ================
 def proses_terima_registrasi(conn, data, selected_id, catatan_admin):
     cur = conn.cursor()
 
@@ -1021,9 +1042,10 @@ def proses_tolak_registrasi(conn, selected_id, catatan_admin):
         st.error("Gagal menolak registrasi.")
         st.code(str(e))
 
-#=================
+
+# =================
 # NOTIFIKASI STATUS REGISTRASI
-#======================
+# ======================
 def page_cek_status_registrasi():
     st.title("🔎 Cek Status Registrasi")
 
@@ -1076,6 +1098,7 @@ def page_cek_status_registrasi():
 
         if data["catatan_admin"]:
             st.info(f"Catatan admin: {data['catatan_admin']}")
+
 
 # =================
 # CRUD SISWA
@@ -1200,6 +1223,7 @@ def page_crud_siswa():
                 st.rerun()
 
     conn.close()
+
 
 # =====================
 # CRUD ORTU
@@ -1356,6 +1380,7 @@ def page_crud_ortu():
 
     conn.close()
 
+
 def logout():
     st.session_state.clear()
     st.rerun()
@@ -1392,6 +1417,7 @@ def page_login():
         else:
             st.error("Username atau password salah")
 
+
 # =========================
 # DASHBOARD
 # =========================
@@ -1415,12 +1441,12 @@ def page_dashboard():
 
     st.title("🏠 Dashboard")
     st.write(f"Halo, **{st.session_state['nama']}**")
-    #st.write(f"Role: **{role}**")
+    # st.write(f"Role: **{role}**")
 
-    #st.divider()
+    # st.divider()
 
     if role == "admin":
-        #st.subheader("Fitur Admin")
+        # st.subheader("Fitur Admin")
 
         col1, col2 = st.columns(2)
 
@@ -1685,13 +1711,12 @@ def cari_materi_relevan(pertanyaan, limit=5):
     konteks = ""
 
     for item in hasil[:limit]:
-
         konteks += f"""
         Judul Materi: {item['judul']}
         Bagian: {item['urutan']}
 
         {item['isi']}
-        
+
         ====================================
         """
 
@@ -1771,6 +1796,7 @@ def page_materi():
 
     conn.close()
 
+
 # =========================
 # PECAH ISI FILE MATERI
 # =========================
@@ -1788,6 +1814,7 @@ def pecah_teks_jadi_chunk(teks, ukuran=1500, overlap=300):
         start += ukuran - overlap
 
     return chunks
+
 
 # =========================
 # CRUD BANK SOAL
@@ -1877,7 +1904,7 @@ def page_bank_soal():
                 SET mapel=?, topik=?, level=?, pertanyaan=?, opsi_a=?, opsi_b=?, opsi_c=?, opsi_d=?, jawaban=?, pembahasan=?
                 WHERE id=?
                 """, (
-                mapel, topik, level, pertanyaan, opsi_a, opsi_b, opsi_c, opsi_d, jawaban, pembahasan, selected_id))
+                    mapel, topik, level, pertanyaan, opsi_a, opsi_b, opsi_c, opsi_d, jawaban, pembahasan, selected_id))
                 conn.commit()
                 st.success("Soal berhasil diupdate")
                 st.rerun()
@@ -2058,7 +2085,7 @@ def page_tryout():
 
         rekomendasi = ask_llm(prompt)
 
-        #cur = conn.cursor()
+        # cur = conn.cursor()
         siswa_id = get_siswa_id_by_username(st.session_state["username"])
 
         if siswa_id is None:
@@ -2126,6 +2153,7 @@ def page_tryout():
         st.write(rekomendasi)
 
     conn.close()
+
 
 # =========================
 # PAGE ADAPTIVE LEARNING
@@ -2246,6 +2274,7 @@ def page_adaptive_learning():
         st.subheader("🧭 Rekomendasi Adaptive Learning")
         st.write(hasil)
 
+
 # =========================
 # AI TUTOR
 # =========================
@@ -2293,6 +2322,7 @@ def page_ai_tutor():
             st.subheader("Jawaban AI Tutor")
             st.write(jawaban)
 
+
 # =========================
 # HALAMAN LEARNING PLANNER
 # =========================
@@ -2323,7 +2353,8 @@ def page_learning_planner():
     conn.close()
 
     if df.empty:
-        st.info(f"Belum ada hasil try out untuk mapel {mapel_dipilih}. Kerjakan Simulasi TKA mapel ini dulu agar AI bisa membuat rencana belajar.")
+        st.info(
+            f"Belum ada hasil try out untuk mapel {mapel_dipilih}. Kerjakan Simulasi TKA mapel ini dulu agar AI bisa membuat rencana belajar.")
         return
 
     latest = df.iloc[0]
@@ -2426,6 +2457,7 @@ def page_learning_planner():
 
         st.subheader("🎯 Rencana Belajar AI")
         st.write(hasil)
+
 
 # =========================
 # PROGRESS SISWA
@@ -2611,6 +2643,7 @@ def page_orang_tua():
             use_container_width=True
         )
 
+
 # =========================
 # HALAMAN GENERATE SOAL
 # =========================
@@ -2752,6 +2785,7 @@ def page_generate_soal_materi():
 
     conn.close()
 
+
 # =====================
 # EXPORT HASIL TRY OUT KE FILE
 # ====================
@@ -2795,6 +2829,7 @@ def export_pdf(df, title="Laporan Hasil Try Out"):
     doc.build(elements)
     output.seek(0)
     return output
+
 
 # ===============================
 # BERSIHKAN TEKS UNTUK PDF
@@ -3011,6 +3046,7 @@ def export_pdf(df, title="Laporan Hasil Try Out"):
     output.seek(0)
     return output
 
+
 # ================================
 # COBA GRATIS TRY OUT
 # ================================
@@ -3041,8 +3077,8 @@ def page_tryout_gratis():
     # Buat paket otomatis saat pertama kali buka halaman
     # atau saat mapel diganti
     perlu_buat_paket = (
-        "free_soal_ids" not in st.session_state
-        or st.session_state.get("free_mapel_aktif") != mapel_dipilih
+            "free_soal_ids" not in st.session_state
+            or st.session_state.get("free_mapel_aktif") != mapel_dipilih
     )
 
     if perlu_buat_paket:
@@ -3227,6 +3263,7 @@ def ambil_topik_prioritas(siswa_id, mapel):
 
     return df
 
+
 # =========================
 # FITUR HALAMAN JADWAL BELAJAR OTOMATIS
 # =========================
@@ -3379,16 +3416,16 @@ def page_jadwal_belajar_otomatis():
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                    siswa_id,
-                    mapel_dipilih,
-                    str(tanggal_mulai),
-                    jumlah_hari,
-                    target_nilai,
-                    waktu_per_hari,
-                    str(jam_belajar),
-                    reminder_aktif,
-                    catatan_ai
-                ))
+                siswa_id,
+                mapel_dipilih,
+                str(tanggal_mulai),
+                jumlah_hari,
+                target_nilai,
+                waktu_per_hari,
+                str(jam_belajar),
+                reminder_aktif,
+                catatan_ai
+            ))
 
             jadwal_id = cur.lastrowid
 
@@ -3556,6 +3593,7 @@ def page_jadwal_belajar_otomatis():
 
     conn.close()
 
+
 # ===========================
 # AMBIL SOAL YANG SALAH
 # ===========================
@@ -3600,13 +3638,13 @@ def analisis_kelemahan_spesifik_ai(df_salah, mapel):
         daftar_soal += f"""
                         Soal:
                         {row['pertanyaan']}
-                        
+
                         Opsi:
                         A. {row['opsi_a']}
                         B. {row['opsi_b']}
                         C. {row['opsi_c']}
                         D. {row['opsi_d']}
-                        
+
                         Jawaban siswa: {row['jawaban_siswa']}
                         Jawaban benar: {row['jawaban_benar']}
                         Topik lama dari bank soal: {row['topik']}
@@ -3617,7 +3655,7 @@ def analisis_kelemahan_spesifik_ai(df_salah, mapel):
             Kamu adalah sistem analisis adaptive learning.
             Tugasmu adalah membaca daftar soal yang dijawab salah oleh siswa, lalu menyimpulkan kelemahan belajar yang lebih spesifik.
             Mapel: {mapel}
-            
+
             Data soal yang salah:
             {daftar_soal}
             Buat output dalam JSON valid saja, tanpa markdown, tanpa penjelasan tambahan.
@@ -3631,7 +3669,7 @@ def analisis_kelemahan_spesifik_ai(df_salah, mapel):
                 "level": "Mudah/Sedang/Sulit"
               }}
             ]
-            
+
             Aturan:
             - Jangan pakai topik umum seperti "Matematika Kelas III".
             - Buat topik spesifik berdasarkan isi soal.
@@ -3661,6 +3699,7 @@ def analisis_kelemahan_spesifik_ai(df_salah, mapel):
 
     except Exception:
         return []
+
 
 # =======================
 # DETAIL BELAJAR HARIAN
@@ -3778,6 +3817,7 @@ def ambil_reminder_belajar_siswa(siswa_id):
 
     return df_hari_ini, df_terlewat
 
+
 # ===========================
 # NOTIFIKASI REMINDER BELAJAR
 # ===========================
@@ -3819,6 +3859,106 @@ def tampilkan_notifikasi_belajar():
                 st.write("---")
 
 
+# ========================
+# CATAT VISITOR HALAMAN WEB
+# =====================
+def catat_pengunjung(halaman="Halaman Awal"):
+    if "visitor_session_id" not in st.session_state:
+        st.session_state["visitor_session_id"] = str(uuid.uuid4())
+
+    if "visitor_logged" not in st.session_state:
+        st.session_state["visitor_logged"] = False
+
+    # Supaya tidak tercatat berkali-kali setiap Streamlit rerun
+    if st.session_state["visitor_logged"]:
+        return
+
+    session_id = st.session_state["visitor_session_id"]
+
+    role = st.session_state.get("role", "guest")
+    username = st.session_state.get("username", None)
+    tanggal = str(date.today())
+
+    conn = connect_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+    INSERT INTO visitor_log (session_id, halaman, role, username, tanggal)
+    VALUES (?, ?, ?, ?, ?)
+    """, (
+        session_id,
+        halaman,
+        role,
+        username,
+        tanggal
+    ))
+
+    conn.commit()
+    conn.close()
+
+    st.session_state["visitor_logged"] = True
+
+# =========================
+# AMBIL STATISTIK PENGUNJUNG HALAMAN
+# =========================
+def ambil_statistik_pengunjung():
+    conn = connect_db()
+
+    hari_ini = str(date.today())
+
+    total_kunjungan = pd.read_sql_query("""
+    SELECT COUNT(*) AS total
+    FROM visitor_log
+    """, conn).iloc[0]["total"]
+
+    kunjungan_hari_ini = pd.read_sql_query("""
+    SELECT COUNT(*) AS total
+    FROM visitor_log
+    WHERE tanggal = ?
+    """, conn, params=(hari_ini,)).iloc[0]["total"]
+
+    pengunjung_unik_hari_ini = pd.read_sql_query("""
+    SELECT COUNT(DISTINCT session_id) AS total
+    FROM visitor_log
+    WHERE tanggal = ?
+    """, conn, params=(hari_ini,)).iloc[0]["total"]
+
+    total_pengunjung_unik = pd.read_sql_query("""
+    SELECT COUNT(DISTINCT session_id) AS total
+    FROM visitor_log
+    """, conn).iloc[0]["total"]
+
+    conn.close()
+
+    return {
+        "total_kunjungan": total_kunjungan,
+        "kunjungan_hari_ini": kunjungan_hari_ini,
+        "pengunjung_unik_hari_ini": pengunjung_unik_hari_ini,
+        "total_pengunjung_unik": total_pengunjung_unik
+    }
+
+# =========================
+# TAMPILAN STATS COUNTER
+# =========================
+def tampilkan_stats_counter():
+    stats = ambil_statistik_pengunjung()
+
+    total_kunjungan = f"{int(stats['total_kunjungan']):,}".replace(",", ".")
+    kunjungan_hari_ini = f"{int(stats['kunjungan_hari_ini']):,}".replace(",", ".")
+    pengunjung_unik_hari_ini = f"{int(stats['pengunjung_unik_hari_ini']):,}".replace(",", ".")
+    total_pengunjung_unik = f"{int(stats['total_pengunjung_unik']):,}".replace(",", ".")
+
+    with st.container(border=True):
+        st.subheader("📊 Statistik Pengunjung")
+
+        st.write(f"**Total Kunjungan:** {total_kunjungan}")
+        st.write(f"**Kunjungan Hari Ini:** {kunjungan_hari_ini}")
+        st.write(f"**Pengunjung Unik Hari Ini:** {pengunjung_unik_hari_ini}")
+        st.write(f"**Total Pengunjung Unik:** {total_pengunjung_unik}")
+
+        st.caption("Statistik dihitung berdasarkan sesi kunjungan aplikasi.")
+
+
 # =========================
 # MAIN
 # =========================
@@ -3826,15 +3966,24 @@ def tampilkan_notifikasi_belajar():
 init_db()
 
 if "username" not in st.session_state:
+    catat_pengunjung("Halaman Awal")
+
     tab1, tab2, tab3, tab4 = st.tabs([
         "🔐 Login",
         "🧪 Coba Try Out Gratis",
-        "📝 Register",
+        "📝 Register Orang Tua",
         "🔎 Cek Status Registrasi"
     ])
 
     with tab1:
-        page_login()
+        col_login, col_stats = st.columns([2, 1])
+
+        with col_login:
+            page_login()
+
+        with col_stats:
+            st.markdown("<div style='height: 32px;' 'text-align: right;'></div>", unsafe_allow_html=True)
+            tampilkan_stats_counter()
 
     with tab2:
         page_tryout_gratis()
@@ -3844,7 +3993,6 @@ if "username" not in st.session_state:
 
     with tab4:
         page_cek_status_registrasi()
-
 else:
     st.sidebar.title("📘 TKA Digital")
     st.sidebar.write(f"Login sebagai: **{st.session_state['nama']}**")
