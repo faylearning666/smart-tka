@@ -272,6 +272,8 @@ def init_db():
         role TEXT,
         username TEXT,
         tanggal TEXT,
+        is_login INTEGER DEFAULT 0,
+        login_at TIMESTAMP,
         waktu TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
@@ -300,6 +302,9 @@ def init_db():
     tambah_kolom_jika_belum_ada(cur, "jadwal_belajar_detail", "latihan_disarankan", "TEXT")
     tambah_kolom_jika_belum_ada(cur, "jadwal_belajar_detail", "topik_spesifik", "TEXT")
     tambah_kolom_jika_belum_ada(cur, "jadwal_belajar_detail", "konteks_kelemahan", "TEXT")
+
+    tambah_kolom_jika_belum_ada(cur, "visitor_log", "is_login", "INTEGER DEFAULT 0")
+    tambah_kolom_jika_belum_ada(cur, "visitor_log", "login_at", "TIMESTAMP")
 
     # Pastikan akun lama aktif
     cur.execute("""
@@ -1418,6 +1423,7 @@ def page_login():
             st.session_state["role"] = user[1]
             st.session_state["nama"] = user[2]
             st.session_state["menu"] = "Dashboard"
+            catat_login_pengunjung(user[0], user[1])
             st.success("Login berhasil")
             st.rerun()
         else:
@@ -3874,15 +3880,11 @@ def catat_pengunjung(halaman="Halaman Awal"):
         st.session_state["visitor_session_id"] = str(uuid.uuid4())
 
     session_id = st.session_state["visitor_session_id"]
-
-    role = st.session_state.get("role", "guest")
-    username = st.session_state.get("username", None)
     tanggal = str(date.today())
 
     conn = connect_db()
     cur = conn.cursor()
 
-    # Cek dulu apakah session ini sudah pernah dicatat
     cur.execute("""
     SELECT COUNT(*)
     FROM visitor_log
@@ -3893,13 +3895,14 @@ def catat_pengunjung(halaman="Halaman Awal"):
 
     if sudah_ada == 0:
         cur.execute("""
-        INSERT INTO visitor_log (session_id, halaman, role, username, tanggal)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO visitor_log 
+        (session_id, halaman, role, username, tanggal, is_login)
+        VALUES (?, ?, ?, ?, ?, 0)
         """, (
             session_id,
             halaman,
-            role,
-            username,
+            "guest",
+            None,
             tanggal
         ))
 
@@ -3915,36 +3918,94 @@ def ambil_statistik_pengunjung():
 
     hari_ini = str(date.today())
 
-    total_kunjungan = pd.read_sql_query("""
-    SELECT COUNT(*) AS total
+    total_pengunjung = pd.read_sql_query("""
+    SELECT COUNT(DISTINCT session_id) AS total
     FROM visitor_log
     """, conn).iloc[0]["total"]
 
-    kunjungan_hari_ini = pd.read_sql_query("""
-    SELECT COUNT(*) AS total
-    FROM visitor_log
-    WHERE tanggal = ?
-    """, conn, params=(hari_ini,)).iloc[0]["total"]
-
-    pengunjung_unik_hari_ini = pd.read_sql_query("""
+    pengunjung_hari_ini = pd.read_sql_query("""
     SELECT COUNT(DISTINCT session_id) AS total
     FROM visitor_log
     WHERE tanggal = ?
     """, conn, params=(hari_ini,)).iloc[0]["total"]
 
-    total_pengunjung_unik = pd.read_sql_query("""
+    login_hari_ini = pd.read_sql_query("""
     SELECT COUNT(DISTINCT session_id) AS total
     FROM visitor_log
+    WHERE tanggal = ? AND is_login = 1
+    """, conn, params=(hari_ini,)).iloc[0]["total"]
+
+    guest_hari_ini = pd.read_sql_query("""
+    SELECT COUNT(DISTINCT session_id) AS total
+    FROM visitor_log
+    WHERE tanggal = ? AND is_login = 0
+    """, conn, params=(hari_ini,)).iloc[0]["total"]
+
+    total_login = pd.read_sql_query("""
+    SELECT COUNT(DISTINCT session_id) AS total
+    FROM visitor_log
+    WHERE is_login = 1
     """, conn).iloc[0]["total"]
 
     conn.close()
 
     return {
-        "total_kunjungan": total_kunjungan,
-        "kunjungan_hari_ini": kunjungan_hari_ini,
-        "pengunjung_unik_hari_ini": pengunjung_unik_hari_ini,
-        "total_pengunjung_unik": total_pengunjung_unik
+        "total_pengunjung": total_pengunjung,
+        "pengunjung_hari_ini": pengunjung_hari_ini,
+        "login_hari_ini": login_hari_ini,
+        "guest_hari_ini": guest_hari_ini,
+        "total_login": total_login
     }
+
+# =========================
+# CATAT YANG LOGIN
+# =========================
+def catat_login_pengunjung(username, role):
+    if "visitor_session_id" not in st.session_state:
+        st.session_state["visitor_session_id"] = str(uuid.uuid4())
+
+    session_id = st.session_state["visitor_session_id"]
+    tanggal = str(date.today())
+
+    conn = connect_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+    SELECT COUNT(*)
+    FROM visitor_log
+    WHERE session_id = ?
+    """, (session_id,))
+
+    sudah_ada = cur.fetchone()[0]
+
+    if sudah_ada == 0:
+        cur.execute("""
+        INSERT INTO visitor_log 
+        (session_id, halaman, role, username, tanggal, is_login, login_at)
+        VALUES (?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+        """, (
+            session_id,
+            "Login",
+            role,
+            username,
+            tanggal
+        ))
+    else:
+        cur.execute("""
+        UPDATE visitor_log
+        SET is_login = 1,
+            username = ?,
+            role = ?,
+            login_at = CURRENT_TIMESTAMP
+        WHERE session_id = ?
+        """, (
+            username,
+            role,
+            session_id
+        ))
+
+    conn.commit()
+    conn.close()
 
 # =========================
 # TAMPILAN STATS COUNTER
@@ -3952,20 +4013,16 @@ def ambil_statistik_pengunjung():
 def tampilkan_stats_counter():
     stats = ambil_statistik_pengunjung()
 
-    total_kunjungan = f"{int(stats['total_kunjungan']):,}".replace(",", ".")
-    kunjungan_hari_ini = f"{int(stats['kunjungan_hari_ini']):,}".replace(",", ".")
-    pengunjung_unik_hari_ini = f"{int(stats['pengunjung_unik_hari_ini']):,}".replace(",", ".")
-    total_pengunjung_unik = f"{int(stats['total_pengunjung_unik']):,}".replace(",", ".")
-
     with st.container(border=True):
         st.subheader("📊 Statistik Pengunjung")
 
-        st.write(f"**Total Kunjungan:** {total_kunjungan}")
-        st.write(f"**Kunjungan Hari Ini:** {kunjungan_hari_ini}")
-        st.write(f"**Pengunjung Unik Hari Ini:** {pengunjung_unik_hari_ini}")
-        st.write(f"**Total Pengunjung Unik:** {total_pengunjung_unik}")
+        st.write(f"**Total Pengunjung:** {int(stats['total_pengunjung'])}")
+        st.write(f"**Pengunjung Hari Ini:** {int(stats['pengunjung_hari_ini'])}")
+        st.write(f"**Login Hari Ini:** {int(stats['login_hari_ini'])}")
+        st.write(f"**Guest Hari Ini:** {int(stats['guest_hari_ini'])}")
+        st.write(f"**Total Pernah Login:** {int(stats['total_login'])}")
 
-        st.caption("Statistik dihitung berdasarkan sesi kunjungan aplikasi.")
+        st.caption("Guest = pengunjung yang membuka aplikasi tapi belum login.")
 
 
 # =========================
