@@ -3149,6 +3149,7 @@ def page_tryout_gratis():
             jawaban_user[row["id"]] = st.radio(
                 "Pilih jawaban",
                 options=["A", "B", "C", "D"],
+                index=None,
                 format_func=lambda x: f"{x}. {pilihan[x]}",
                 key=f"free_soal_{row['id']}"
             )
