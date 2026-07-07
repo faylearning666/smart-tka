@@ -1382,7 +1382,13 @@ def page_crud_ortu():
 
 
 def logout():
+    visitor_session_id = st.session_state.get("visitor_session_id")
+
     st.session_state.clear()
+
+    if visitor_session_id:
+        st.session_state["visitor_session_id"] = visitor_session_id
+
     st.rerun()
 
 
@@ -3867,13 +3873,6 @@ def catat_pengunjung(halaman="Halaman Awal"):
     if "visitor_session_id" not in st.session_state:
         st.session_state["visitor_session_id"] = str(uuid.uuid4())
 
-    if "visitor_logged" not in st.session_state:
-        st.session_state["visitor_logged"] = False
-
-    # Supaya tidak tercatat berkali-kali setiap Streamlit rerun
-    if st.session_state["visitor_logged"]:
-        return
-
     session_id = st.session_state["visitor_session_id"]
 
     role = st.session_state.get("role", "guest")
@@ -3883,21 +3882,30 @@ def catat_pengunjung(halaman="Halaman Awal"):
     conn = connect_db()
     cur = conn.cursor()
 
+    # Cek dulu apakah session ini sudah pernah dicatat
     cur.execute("""
-    INSERT INTO visitor_log (session_id, halaman, role, username, tanggal)
-    VALUES (?, ?, ?, ?, ?)
-    """, (
-        session_id,
-        halaman,
-        role,
-        username,
-        tanggal
-    ))
+    SELECT COUNT(*)
+    FROM visitor_log
+    WHERE session_id = ?
+    """, (session_id,))
 
-    conn.commit()
+    sudah_ada = cur.fetchone()[0]
+
+    if sudah_ada == 0:
+        cur.execute("""
+        INSERT INTO visitor_log (session_id, halaman, role, username, tanggal)
+        VALUES (?, ?, ?, ?, ?)
+        """, (
+            session_id,
+            halaman,
+            role,
+            username,
+            tanggal
+        ))
+
+        conn.commit()
+
     conn.close()
-
-    st.session_state["visitor_logged"] = True
 
 # =========================
 # AMBIL STATISTIK PENGUNJUNG HALAMAN
