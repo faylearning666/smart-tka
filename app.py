@@ -1253,6 +1253,7 @@ def page_crud_ortu():
         ortu.hubungan,
         ortu.email,
         ortu.no_hp,
+        password,
         siswa.nama AS nama_siswa
     FROM ortu
     JOIN users ON ortu.user_id = users.id
