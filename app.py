@@ -2151,6 +2151,67 @@ def page_tryout():
         st.success(f"Nilai kamu: {nilai}")
         st.write(f"Benar: {benar} dari {total}")
 
+        st.divider()
+
+        st.subheader("🧾 Review Soal & Pembahasan")
+        
+        for nomor, (_, row) in enumerate(df.iterrows(), start=1):
+            jawaban_siswa = jawaban_user[row["id"]]
+            jawaban_benar = row["jawaban"]
+        
+            pilihan = {
+                "A": row["opsi_a"],
+                "B": row["opsi_b"],
+                "C": row["opsi_c"],
+                "D": row["opsi_d"],
+            }
+        
+            is_benar = jawaban_siswa == jawaban_benar
+            status = "✅ Benar" if is_benar else "❌ Salah"
+        
+            topik = row["topik"] if pd.notna(row["topik"]) else "-"
+            level = row["level"] if pd.notna(row["level"]) else "-"
+        
+            with st.expander(
+                f"Soal {nomor} | {status} | Topik: {topik} | Level: {level}",
+                expanded=False
+            ):
+                st.markdown(f"**Pertanyaan:** {row['pertanyaan']}")
+        
+                st.write("**Pilihan Jawaban:**")
+        
+                for kode, teks_opsi in pilihan.items():
+                    label = ""
+        
+                    if kode == jawaban_benar and kode == jawaban_siswa:
+                        label = " ✅ Jawaban kamu & jawaban benar"
+                    elif kode == jawaban_benar:
+                        label = " ✅ Jawaban benar"
+                    elif kode == jawaban_siswa:
+                        label = " ❌ Jawaban kamu"
+        
+                    st.write(f"{kode}. {teks_opsi}{label}")
+        
+                if is_benar:
+                    st.success(
+                        f"Jawaban kamu benar: {jawaban_siswa}. {pilihan.get(jawaban_siswa, '-')}"
+                    )
+                else:
+                    st.error(
+                        f"Jawaban kamu: {jawaban_siswa}. {pilihan.get(jawaban_siswa, '-')}"
+                    )
+                    st.success(
+                        f"Jawaban benar: {jawaban_benar}. {pilihan.get(jawaban_benar, '-')}"
+                    )
+        
+                pembahasan = row["pembahasan"]
+        
+                if pd.isna(pembahasan) or str(pembahasan).strip() == "":
+                    pembahasan = "Pembahasan belum tersedia."
+        
+                st.markdown("**Pembahasan:**")
+                st.info(pembahasan)
+
         st.subheader("📊 Analisis Per Mapel")
         for mapel, data in hasil_mapel.items():
             nilai_mapel = round((data["benar"] / data["total"]) * 100, 2)
