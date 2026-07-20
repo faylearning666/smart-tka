@@ -159,6 +159,11 @@ def connect_db():
     database_url = get_database_url()
 
     if database_url:
+        st.sidebar.success("DATABASE_URL terbaca")
+        conn = psycopg2.connect(database_url, sslmode="require")
+        conn.autocommit = False
+        return PostgresConnAdapter(conn)
+
         if psycopg2 is None:
             raise ImportError(
                 "psycopg2-binary belum terinstall. Tambahkan psycopg2-binary ke requirements.txt."
