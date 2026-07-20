@@ -159,20 +159,22 @@ def connect_db():
     database_url = get_database_url()
 
     if database_url:
-        st.sidebar.success("DATABASE_URL terbaca")
-        conn = psycopg2.connect(database_url, sslmode="require")
-        conn.autocommit = False
-        return PostgresConnAdapter(conn)
-
         if psycopg2 is None:
             raise ImportError(
                 "psycopg2-binary belum terinstall. Tambahkan psycopg2-binary ke requirements.txt."
             )
 
         if "sslmode=" in database_url:
-            conn = psycopg2.connect(database_url)
+            conn = psycopg2.connect(
+                database_url,
+                connect_timeout=10
+            )
         else:
-            conn = psycopg2.connect(database_url, sslmode="require")
+            conn = psycopg2.connect(
+                database_url,
+                sslmode="require",
+                connect_timeout=10
+            )
 
         return PostgresConnectionWrapper(conn)
 
