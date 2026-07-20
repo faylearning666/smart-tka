@@ -23,6 +23,14 @@ from reportlab.lib.enums import TA_CENTER
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from datetime import date
 
+import warnings
+
+warnings.filterwarnings(
+    "ignore",
+    message="pandas only supports SQLAlchemy connectable.*",
+    category=UserWarning
+)
+
 DB_NAME = "tka_mvp.db"
 
 MAPEL_OPTIONS = [
