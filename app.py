@@ -1,4 +1,8 @@
 import sqlite3
+try:
+    import psycopg2
+except ImportError:
+    psycopg2 = None
 import pandas as pd
 import streamlit as st
 from openai import OpenAI
@@ -39,27 +43,180 @@ st.set_page_config(
 # =========================
 # DATABASE
 # =========================
+
+def get_database_url():
+    """
+    Kalau DATABASE_URL diisi di Streamlit Secrets, aplikasi memakai Supabase/PostgreSQL.
+    Kalau kosong, aplikasi tetap bisa jalan lokal memakai SQLite tka_mvp.db.
+    """
+    try:
+        database_url = st.secrets.get("DATABASE_URL", None)
+    except Exception:
+        database_url = None
+
+    if not database_url:
+        database_url = os.environ.get("DATABASE_URL", None)
+
+    return database_url
+
+
+def is_postgres_mode():
+    return bool(get_database_url())
+
+
+def convert_sql_for_postgres(sql):
+    """
+    Adapter ringan supaya query lama SQLite lebih mudah jalan di PostgreSQL.
+    """
+    sql = sql.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
+    sql = sql.replace("AUTOINCREMENT", "")
+
+    # SQLite pakai ?, PostgreSQL/psycopg2 pakai %s
+    sql = sql.replace("?", "%s")
+
+    return sql
+
+
+def insert_needs_returning_id(sql):
+    sql_clean = sql.strip().lower()
+    return (
+        sql_clean.startswith("insert into")
+        and " returning " not in sql_clean
+    )
+
+
+class PostgresCursorWrapper:
+    def __init__(self, cursor):
+        self.cursor = cursor
+        self.lastrowid = None
+
+    def execute(self, sql, params=None):
+        sql_pg = convert_sql_for_postgres(sql)
+
+        needs_returning = insert_needs_returning_id(sql_pg)
+
+        if needs_returning:
+            sql_pg = sql_pg.rstrip().rstrip(";") + " RETURNING id"
+
+        if params is None:
+            self.cursor.execute(sql_pg)
+        else:
+            self.cursor.execute(sql_pg, params)
+
+        if needs_returning:
+            try:
+                row = self.cursor.fetchone()
+                self.lastrowid = row[0] if row else None
+            except Exception:
+                self.lastrowid = None
+
+        return self
+
+    def executemany(self, sql, seq_of_params):
+        sql_pg = convert_sql_for_postgres(sql)
+        self.cursor.executemany(sql_pg, seq_of_params)
+        return self
+
+    def fetchone(self):
+        return self.cursor.fetchone()
+
+    def fetchall(self):
+        return self.cursor.fetchall()
+
+    def close(self):
+        return self.cursor.close()
+
+    @property
+    def description(self):
+        return self.cursor.description
+
+    @property
+    def rowcount(self):
+        return self.cursor.rowcount
+
+
+class PostgresConnectionWrapper:
+    def __init__(self, conn):
+        self.conn = conn
+
+    def cursor(self):
+        return PostgresCursorWrapper(self.conn.cursor())
+
+    def commit(self):
+        return self.conn.commit()
+
+    def rollback(self):
+        return self.conn.rollback()
+
+    def close(self):
+        return self.conn.close()
+
+    def __getattr__(self, name):
+        return getattr(self.conn, name)
+
+
 def connect_db():
+    database_url = get_database_url()
+
+    if database_url:
+        if psycopg2 is None:
+            raise ImportError(
+                "psycopg2-binary belum terinstall. Tambahkan psycopg2-binary ke requirements.txt."
+            )
+
+        if "sslmode=" in database_url:
+            conn = psycopg2.connect(database_url)
+        else:
+            conn = psycopg2.connect(database_url, sslmode="require")
+
+        return PostgresConnectionWrapper(conn)
+
     return sqlite3.connect(DB_NAME, check_same_thread=False)
 
 
 def tambah_kolom_jika_belum_ada(cur, nama_tabel, nama_kolom, tipe_data):
-    # Cek dulu apakah tabelnya sudah ada
-    cur.execute("""
-    SELECT name 
-    FROM sqlite_master 
-    WHERE type='table' AND name=?
-    """, (nama_tabel,))
+    if isinstance(cur, PostgresCursorWrapper):
+        # Cek tabel di PostgreSQL
+        cur.execute("""
+        SELECT COUNT(*)
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+        AND table_name = %s
+        """, (nama_tabel,))
 
-    if cur.fetchone() is None:
-        return
+        if cur.fetchone()[0] == 0:
+            return
 
-    # Cek apakah kolom sudah ada
-    cur.execute(f"PRAGMA table_info({nama_tabel})")
-    kolom = [row[1] for row in cur.fetchall()]
+        # Cek kolom di PostgreSQL
+        cur.execute("""
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+        AND table_name = %s
+        """, (nama_tabel,))
 
-    if nama_kolom not in kolom:
-        cur.execute(f"ALTER TABLE {nama_tabel} ADD COLUMN {nama_kolom} {tipe_data}")
+        kolom = [row[0] for row in cur.fetchall()]
+
+        if nama_kolom not in kolom:
+            cur.execute(f"ALTER TABLE {nama_tabel} ADD COLUMN {nama_kolom} {tipe_data}")
+
+    else:
+        # Cek tabel di SQLite
+        cur.execute("""
+        SELECT name
+        FROM sqlite_master
+        WHERE type='table' AND name=?
+        """, (nama_tabel,))
+
+        if cur.fetchone() is None:
+            return
+
+        # Cek kolom di SQLite
+        cur.execute(f"PRAGMA table_info({nama_tabel})")
+        kolom = [row[1] for row in cur.fetchall()]
+
+        if nama_kolom not in kolom:
+            cur.execute(f"ALTER TABLE {nama_tabel} ADD COLUMN {nama_kolom} {tipe_data}")
 
 
 def init_db():
@@ -130,6 +287,25 @@ def init_db():
         rekomendasi TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (siswa_id) REFERENCES siswa(id)
+    )
+    """)
+
+
+    # Bank soal dibuat lebih awal karena hasil_tryout_detail punya foreign key ke bank_soal.
+    # Ini penting untuk PostgreSQL/Supabase.
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS bank_soal (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        mapel TEXT,
+        topik TEXT,
+        level TEXT,
+        pertanyaan TEXT,
+        opsi_a TEXT,
+        opsi_b TEXT,
+        opsi_c TEXT,
+        opsi_d TEXT,
+        jawaban TEXT,
+        pembahasan TEXT
     )
     """)
 
