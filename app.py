@@ -1059,6 +1059,183 @@ def get_siswa_id_by_ortu_username(username):
     return row[0] if row else None
 
 
+# =====================================
+# hitung berapa kali TKA
+# =====================================
+def ambil_rekap_simulasi_tka(siswa_id=None):
+    conn = connect_db()
+
+    query = """
+    SELECT 
+        siswa.id AS siswa_id,
+        siswa.nama AS nama_siswa,
+        siswa.kelas,
+        siswa.sekolah,
+        users.status_akun,
+        COUNT(hasil_tryout.id) AS total_simulasi,
+        AVG(hasil_tryout.nilai) AS rata_nilai,
+        MAX(hasil_tryout.nilai) AS nilai_tertinggi,
+        MAX(hasil_tryout.created_at) AS terakhir_simulasi
+    FROM siswa
+    JOIN users ON siswa.user_id = users.id
+    LEFT JOIN hasil_tryout ON hasil_tryout.siswa_id = siswa.id
+    WHERE users.status_akun = 'aktif'
+    """
+
+    params = []
+
+    if siswa_id is not None:
+        query += " AND siswa.id = ?"
+        params.append(siswa_id)
+
+    query += """
+    GROUP BY 
+        siswa.id,
+        siswa.nama,
+        siswa.kelas,
+        siswa.sekolah,
+        users.status_akun
+    ORDER BY total_simulasi DESC, siswa.nama ASC
+    """
+
+    df = pd.read_sql_query(query, conn, params=params)
+    conn.close()
+
+    if not df.empty:
+        df["total_simulasi"] = df["total_simulasi"].fillna(0).astype(int)
+        df["rata_nilai"] = pd.to_numeric(df["rata_nilai"], errors="coerce").fillna(0).round(2)
+        df["nilai_tertinggi"] = pd.to_numeric(df["nilai_tertinggi"], errors="coerce").fillna(0).round(2)
+        df["terakhir_simulasi"] = df["terakhir_simulasi"].fillna("-")
+
+    return df
+
+
+def ambil_rekap_simulasi_per_mapel(siswa_id):
+    conn = connect_db()
+
+    df = pd.read_sql_query("""
+    SELECT 
+        mapel,
+        COUNT(*) AS jumlah_simulasi,
+        AVG(nilai) AS rata_nilai,
+        MAX(nilai) AS nilai_tertinggi,
+        MAX(created_at) AS terakhir_simulasi
+    FROM hasil_tryout
+    WHERE siswa_id = ?
+    GROUP BY mapel
+    ORDER BY jumlah_simulasi DESC, mapel ASC
+    """, conn, params=(siswa_id,))
+
+    conn.close()
+
+    if not df.empty:
+        df["jumlah_simulasi"] = df["jumlah_simulasi"].fillna(0).astype(int)
+        df["rata_nilai"] = pd.to_numeric(df["rata_nilai"], errors="coerce").fillna(0).round(2)
+        df["nilai_tertinggi"] = pd.to_numeric(df["nilai_tertinggi"], errors="coerce").fillna(0).round(2)
+        df["terakhir_simulasi"] = df["terakhir_simulasi"].fillna("-")
+
+    return df
+
+
+def tampilkan_rekap_penggunaan_simulasi_admin():
+    st.subheader("📌 Rekap Penggunaan Simulasi TKA")
+
+    df_rekap = ambil_rekap_simulasi_tka()
+
+    if df_rekap.empty:
+        st.info("Belum ada data siswa aktif.")
+        return
+
+    total_siswa = len(df_rekap)
+    siswa_sudah_simulasi = int((df_rekap["total_simulasi"] > 0).sum())
+    total_simulasi = int(df_rekap["total_simulasi"].sum())
+    rata_pemakaian = round(total_simulasi / total_siswa, 2) if total_siswa > 0 else 0
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.metric("Siswa Aktif", total_siswa)
+
+    with col2:
+        st.metric("Sudah Simulasi", siswa_sudah_simulasi)
+
+    with col3:
+        st.metric("Total Simulasi", total_simulasi)
+
+    with col4:
+        st.metric("Rata-rata / Siswa", rata_pemakaian)
+
+    df_tampil = df_rekap.rename(columns={
+        "siswa_id": "ID Siswa",
+        "nama_siswa": "Nama Siswa",
+        "kelas": "Kelas",
+        "sekolah": "Sekolah",
+        "total_simulasi": "Total Simulasi",
+        "rata_nilai": "Rata-rata Nilai",
+        "nilai_tertinggi": "Nilai Tertinggi",
+        "terakhir_simulasi": "Terakhir Simulasi"
+    })
+
+    kolom_tampil = [
+        "ID Siswa",
+        "Nama Siswa",
+        "Kelas",
+        "Sekolah",
+        "Total Simulasi",
+        "Rata-rata Nilai",
+        "Nilai Tertinggi",
+        "Terakhir Simulasi"
+    ]
+
+    st.dataframe(df_tampil[kolom_tampil], use_container_width=True)
+
+
+def tampilkan_penggunaan_simulasi_siswa(siswa_id, judul="📌 Penggunaan Simulasi TKA"):
+    st.subheader(judul)
+
+    df_rekap = ambil_rekap_simulasi_tka(siswa_id)
+
+    if df_rekap.empty:
+        st.info("Data siswa tidak ditemukan.")
+        return
+
+    data = df_rekap.iloc[0]
+
+    total_simulasi = int(data["total_simulasi"])
+    rata_nilai = float(data["rata_nilai"])
+    nilai_tertinggi = float(data["nilai_tertinggi"])
+    terakhir_simulasi = data["terakhir_simulasi"]
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric("Total Simulasi TKA", total_simulasi)
+
+    with col2:
+        st.metric("Rata-rata Nilai", rata_nilai)
+
+    with col3:
+        st.metric("Nilai Tertinggi", nilai_tertinggi)
+
+    st.caption(f"Terakhir simulasi: {terakhir_simulasi}")
+
+    df_mapel = ambil_rekap_simulasi_per_mapel(siswa_id)
+
+    if not df_mapel.empty:
+        st.write("**Rincian per Mapel**")
+
+        df_mapel_tampil = df_mapel.rename(columns={
+            "mapel": "Mapel",
+            "jumlah_simulasi": "Jumlah Simulasi",
+            "rata_nilai": "Rata-rata Nilai",
+            "nilai_tertinggi": "Nilai Tertinggi",
+            "terakhir_simulasi": "Terakhir Simulasi"
+        })
+
+        st.dataframe(df_mapel_tampil, use_container_width=True)
+    else:
+        st.info("Belum pernah melakukan simulasi TKA.")
+        
 # =================
 # FUNGSI BUAT NGECEK USERNAME
 # =================
@@ -1174,7 +1351,7 @@ def page_register_bayar():
     st.success("Aktifkan akun penuh dan akses semua fitur Smart TKA.")
     st.info(
         f"Biaya registrasi: **Rp {HARGA_REGISTRASI:,.0f}**".replace(",", ".")
-        + "\n\nSilakan transfer sesuai instruksi pembayaran, lalu upload bukti bayar."
+        + "\n\nSilakan lakukan pembayaran via transfer ke No. Rek 202604606 BNI a.n. Diana Effendi, lalu upload bukti bayar."
     )
 
     st.warning(
@@ -3037,6 +3214,13 @@ def page_progress_saya():
         conn.close()
         return
 
+    tampilkan_penggunaan_simulasi_siswa(
+        siswa_id,
+        "📌 Penggunaan Simulasi TKA Kamu"
+    )
+    
+    st.divider()
+
     df = pd.read_sql_query("""
     SELECT mapel, nilai, benar, total, rekomendasi, created_at
     FROM hasil_tryout
@@ -3073,6 +3257,8 @@ def page_orang_tua():
     conn = connect_db()
 
     if role == "admin":
+        tampilkan_rekap_penggunaan_simulasi_admin()
+        st.divider()
         df_siswa = pd.read_sql_query("""
         SELECT id, nama, kelas, sekolah
         FROM siswa
@@ -3093,6 +3279,13 @@ def page_orang_tua():
             st.error("Data orang tua belum terhubung dengan siswa.")
             conn.close()
             return
+
+        tampilkan_penggunaan_simulasi_siswa(
+            filter_siswa_id,
+            "📌 Penggunaan Simulasi TKA Anak"
+        )
+    
+        st.divider()
 
     else:
         st.error("Akses tidak valid.")
@@ -3615,7 +3808,7 @@ def export_pdf(df, title="Laporan Hasil Try Out"):
 def page_tryout_gratis():
     st.title("🧪 Coba Try Out Gratis")
 
-    JUMLAH_SOAL_GRATIS = 5
+    JUMLAH_SOAL_GRATIS = 20
 
     st.info(
         "Fitur ini dapat dicoba tanpa login. "
