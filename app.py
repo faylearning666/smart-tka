@@ -4626,34 +4626,30 @@ if "username" not in st.session_state:
         page_register_bayar()
 
     else:
-        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        tab1, tab2, tab3, tab4 = st.tabs([
             "🔐 Login",
             "🧪 Coba Try Out Gratis",
             "💳 Register Berbayar",
-            "📝 Register Orang Tua",
             "🔎 Cek Status Registrasi"
         ])
-
+        
         with tab1:
             col_login, col_stats = st.columns([2, 1])
-
+        
             with col_login:
                 page_login()
-
+        
             with col_stats:
                 st.markdown("<div style='height: 32px;'></div>", unsafe_allow_html=True)
                 tampilkan_stats_counter()
-
+        
         with tab2:
             page_tryout_gratis()
-
+        
         with tab3:
             page_register_bayar()
-
+        
         with tab4:
-            page_register_ortu()
-
-        with tab5:
             page_cek_status_registrasi()
 else:
     st.sidebar.title("📘 TKA Digital")
