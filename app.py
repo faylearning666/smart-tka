@@ -4909,7 +4909,7 @@ else:
         st.session_state["menu"] = "Dashboard"
 
     if "sidebar_menu" not in st.session_state:
-    st.session_state["sidebar_menu"] = st.session_state.get("menu", "Dashboard")
+        st.session_state["sidebar_menu"] = st.session_state.get("menu", "Dashboard")
 
     if st.session_state["sidebar_menu"] not in menu_options:
         st.session_state["sidebar_menu"] = "Dashboard"
