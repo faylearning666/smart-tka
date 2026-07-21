@@ -41,6 +41,7 @@ MAPEL_OPTIONS = [
 ]
 
 LEVEL_OPTIONS = ["Mudah", "Sedang", "Sulit"]
+DB_SCHEMA_VERSION = "2026-07-21-v1"
 
 st.set_page_config(
     page_title="TKA Digital MVP + LLM",
@@ -698,7 +699,11 @@ def init_db():
     conn.commit()
     conn.close()
 
-
+@st.cache_resource(show_spinner=False)
+def jalankan_init_db_sekali(schema_version):
+    init_db()
+    return True
+    
 #================================
 # cek trial gratis
 #================================
@@ -4823,7 +4828,8 @@ def tampilkan_stats_counter():
 # MAIN
 # =========================
 
-init_db()
+#init_db()
+jalankan_init_db_sekali(DB_SCHEMA_VERSION)
 
 if "username" not in st.session_state:
     catat_pengunjung("Halaman Awal")
@@ -4902,12 +4908,19 @@ else:
     if st.session_state["menu"] not in menu_options:
         st.session_state["menu"] = "Dashboard"
 
+    if "sidebar_menu" not in st.session_state:
+    st.session_state["sidebar_menu"] = st.session_state.get("menu", "Dashboard")
+
+    if st.session_state["sidebar_menu"] not in menu_options:
+        st.session_state["sidebar_menu"] = "Dashboard"
+    
     menu = st.sidebar.radio(
         "Menu",
         menu_options,
-        index=menu_options.index(st.session_state["menu"])
+        index=menu_options.index(st.session_state["sidebar_menu"]),
+        key="sidebar_menu"
     )
-
+    
     st.session_state["menu"] = menu
 
     if st.sidebar.button("Logout"):
