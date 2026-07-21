@@ -1000,7 +1000,7 @@ def ask_llm(prompt):
 # AUTH
 # =========================
 
-def (username, password):
+def login(username, password):
     conn = connect_db()
     cur = conn.cursor()
 
