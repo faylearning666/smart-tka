@@ -23,6 +23,7 @@ from reportlab.lib.enums import TA_CENTER
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from datetime import date
 
+import base64
 import warnings
 
 warnings.filterwarnings(
@@ -469,6 +470,22 @@ def init_db():
     )
     """)
 
+    # untuk yang free trial
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS free_trial_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT,
+        nama TEXT,
+        email TEXT,
+        no_hp TEXT,
+        mapel TEXT,
+        nilai REAL,
+        benar INTEGER,
+        total INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
     # =========================
     # 7. MIGRASI AMAN UNTUK DATABASE LAMA
     # =========================
@@ -496,6 +513,16 @@ def init_db():
 
     tambah_kolom_jika_belum_ada(cur, "visitor_log", "is_login", "INTEGER DEFAULT 0")
     tambah_kolom_jika_belum_ada(cur, "visitor_log", "login_at", "TIMESTAMP")
+
+    # tambah untuk pembayaran
+    tambah_kolom_jika_belum_ada(cur, "pendaftaran_ortu_siswa", "jenis_pendaftaran", "TEXT")
+    tambah_kolom_jika_belum_ada(cur, "pendaftaran_ortu_siswa", "nominal_bayar", "INTEGER")
+    tambah_kolom_jika_belum_ada(cur, "pendaftaran_ortu_siswa", "status_pembayaran", "TEXT")
+    tambah_kolom_jika_belum_ada(cur, "pendaftaran_ortu_siswa", "bukti_bayar_filename", "TEXT")
+    tambah_kolom_jika_belum_ada(cur, "pendaftaran_ortu_siswa", "bukti_bayar_mime", "TEXT")
+    tambah_kolom_jika_belum_ada(cur, "pendaftaran_ortu_siswa", "bukti_bayar_base64", "TEXT")
+    tambah_kolom_jika_belum_ada(cur, "pendaftaran_ortu_siswa", "sumber_trial_email", "TEXT")
+    tambah_kolom_jika_belum_ada(cur, "pendaftaran_ortu_siswa", "sumber_trial_no_hp", "TEXT")
 
     # Pastikan akun lama aktif
     cur.execute("""
@@ -633,6 +660,63 @@ def init_db():
     conn.close()
 
 
+#================================
+# cek trial gratis
+#================================
+HARGA_REGISTRASI = 100000
+
+def normalisasi_teks(teks):
+    if teks is None:
+        return ""
+    return str(teks).strip().lower()
+
+
+def sudah_pernah_tryout_gratis(email, no_hp):
+    email = normalisasi_teks(email)
+    no_hp = normalisasi_teks(no_hp)
+
+    conn = connect_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+    SELECT COUNT(*)
+    FROM free_trial_log
+    WHERE LOWER(email) = ? OR no_hp = ?
+    """, (email, no_hp))
+
+    jumlah = cur.fetchone()[0]
+    conn.close()
+
+    return jumlah > 0
+
+
+def catat_tryout_gratis(nama, email, no_hp, mapel, nilai, benar, total):
+    if "visitor_session_id" not in st.session_state:
+        st.session_state["visitor_session_id"] = str(uuid.uuid4())
+
+    session_id = st.session_state["visitor_session_id"]
+
+    conn = connect_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+    INSERT INTO free_trial_log
+    (session_id, nama, email, no_hp, mapel, nilai, benar, total)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        session_id,
+        nama,
+        normalisasi_teks(email),
+        no_hp,
+        mapel,
+        nilai,
+        benar,
+        total
+    ))
+
+    conn.commit()
+    conn.close()
+    
 # =========================
 # FUNGSI NAIK TURUN LEVEL UNTUK ADAPTIVE LEARNING
 # =========================
@@ -1025,6 +1109,130 @@ def page_register_ortu():
             conn.close()
 
 
+# ===================
+# halaman registrasi bayar
+# ===================
+def page_register_bayar():
+    st.title("💳 Registrasi Berbayar Smart TKA")
+
+    st.success("Aktifkan akun penuh dan akses semua fitur Smart TKA.")
+    st.info(
+        f"Biaya registrasi: **Rp {HARGA_REGISTRASI:,.0f}**".replace(",", ".")
+        + "\n\nSilakan transfer sesuai instruksi pembayaran, lalu upload bukti bayar."
+    )
+
+    st.warning(
+        "Setelah registrasi dikirim, admin akan memverifikasi bukti bayar terlebih dahulu. "
+        "Akun siswa dan orang tua akan aktif setelah disetujui admin."
+    )
+
+    with st.form("form_register_bayar"):
+        st.subheader("Data Siswa")
+
+        nama_siswa = st.text_input("Nama Siswa")
+        kelas = st.text_input("Kelas")
+        sekolah = st.text_input("Sekolah")
+        email_siswa = st.text_input(
+            "Email Siswa",
+            value=st.session_state.get("trial_email", "")
+        )
+
+        username_siswa = st.text_input("Username Login Siswa")
+        password_siswa = st.text_input("Password Login Siswa", type="password")
+
+        st.divider()
+
+        st.subheader("Data Orang Tua / Wali")
+
+        nama_ortu = st.text_input("Nama Orang Tua / Wali")
+        hubungan = st.selectbox("Hubungan", ["Ayah", "Ibu", "Wali"])
+        email_ortu = st.text_input("Email Orang Tua")
+        no_hp = st.text_input(
+            "No HP",
+            value=st.session_state.get("trial_no_hp", "")
+        )
+
+        username_ortu = st.text_input("Username Login Orang Tua")
+        password_ortu = st.text_input("Password Login Orang Tua", type="password")
+
+        st.divider()
+
+        st.subheader("Upload Bukti Pembayaran")
+        bukti_bayar = st.file_uploader(
+            "Upload bukti bayar",
+            type=["jpg", "jpeg", "png", "pdf"]
+        )
+
+        submit = st.form_submit_button("Kirim Registrasi Berbayar")
+
+        if submit:
+            if not nama_siswa or not nama_ortu or not username_siswa or not username_ortu:
+                st.warning("Nama siswa, nama orang tua, username siswa, dan username orang tua wajib diisi.")
+                return
+
+            if not password_siswa or not password_ortu:
+                st.warning("Password siswa dan password orang tua wajib diisi.")
+                return
+
+            if username_siswa == username_ortu:
+                st.warning("Username siswa dan username orang tua tidak boleh sama.")
+                return
+
+            if username_sudah_dipakai(username_siswa):
+                st.error("Username siswa sudah digunakan atau sedang menunggu verifikasi.")
+                return
+
+            if username_sudah_dipakai(username_ortu):
+                st.error("Username orang tua sudah digunakan atau sedang menunggu verifikasi.")
+                return
+
+            if bukti_bayar is None:
+                st.warning("Bukti bayar wajib diupload.")
+                return
+
+            bukti_bytes = bukti_bayar.read()
+            bukti_base64 = base64.b64encode(bukti_bytes).decode("utf-8")
+
+            conn = connect_db()
+            cur = conn.cursor()
+
+            try:
+                cur.execute("""
+                INSERT INTO pendaftaran_ortu_siswa (
+                    nama_siswa, kelas, sekolah, email_siswa, username_siswa, password_siswa,
+                    nama_ortu, hubungan, email_ortu, no_hp, username_ortu, password_ortu,
+                    status, jenis_pendaftaran, nominal_bayar, status_pembayaran,
+                    bukti_bayar_filename, bukti_bayar_mime, bukti_bayar_base64,
+                    sumber_trial_email, sumber_trial_no_hp
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
+                        'pending', 'berbayar', ?, 'menunggu_verifikasi',
+                        ?, ?, ?, ?, ?)
+                """, (
+                    nama_siswa, kelas, sekolah, email_siswa, username_siswa, password_siswa,
+                    nama_ortu, hubungan, email_ortu, no_hp, username_ortu, password_ortu,
+                    HARGA_REGISTRASI,
+                    bukti_bayar.name,
+                    bukti_bayar.type,
+                    bukti_base64,
+                    st.session_state.get("trial_email", ""),
+                    st.session_state.get("trial_no_hp", "")
+                ))
+
+                conn.commit()
+
+                st.success(
+                    "Registrasi berbayar berhasil dikirim. "
+                    "Silakan tunggu verifikasi admin."
+                )
+
+            except Exception as e:
+                conn.rollback()
+                st.error("Registrasi berbayar gagal.")
+                st.code(str(e))
+
+            conn.close()
+            
 # =================
 # HALAMAN VERIFIKASI ADMIN NERIMA ORTU DAN SISWA
 # =================
@@ -1097,6 +1305,30 @@ def page_verifikasi_register():
                 st.write(f"Email: **{data['email_ortu']}**")
                 st.write(f"No HP: **{data['no_hp']}**")
                 st.write(f"Username: **{data['username_ortu']}**")
+
+                st.write("### Info Pembayaran")
+    
+                jenis_pendaftaran = data["jenis_pendaftaran"] if "jenis_pendaftaran" in data and data["jenis_pendaftaran"] else "-"
+                nominal_bayar = data["nominal_bayar"] if "nominal_bayar" in data and data["nominal_bayar"] else 0
+                status_pembayaran = data["status_pembayaran"] if "status_pembayaran" in data and data["status_pembayaran"] else "-"
+                
+                st.write(f"Jenis pendaftaran: **{jenis_pendaftaran}**")
+                st.write(f"Nominal bayar: **Rp {int(nominal_bayar):,}**".replace(",", "."))
+                st.write(f"Status pembayaran: **{status_pembayaran}**")
+                
+                if "bukti_bayar_base64" in data and data["bukti_bayar_base64"]:
+                    bukti_bytes = base64.b64decode(data["bukti_bayar_base64"])
+                    filename = data["bukti_bayar_filename"] if data["bukti_bayar_filename"] else "bukti_bayar"
+                    mime = data["bukti_bayar_mime"] if data["bukti_bayar_mime"] else "application/octet-stream"
+                
+                    st.download_button(
+                        "Download Bukti Bayar",
+                        data=bukti_bytes,
+                        file_name=filename,
+                        mime=mime
+                    )
+                else:
+                    st.caption("Belum ada bukti bayar.")
 
             catatan_admin = st.text_area("Catatan Admin")
 
@@ -1621,7 +1853,16 @@ def page_login():
         else:
             st.error("Username atau password salah")
 
+    st.divider()
 
+    st.info(
+        "Belum punya akun? Daftar akun penuh Smart TKA untuk menyimpan progress, "
+        "mendapat try out adaptif, learning planner, jadwal belajar, dan dashboard orang tua."
+    )
+    
+    if st.button("Daftar Berbayar Rp100.000"):
+        st.session_state["halaman_awal"] = "register_bayar"
+        st.rerun()
 # =========================
 # DASHBOARD
 # =========================
@@ -3327,6 +3568,42 @@ def page_tryout_gratis():
         "learning planner, dan pantauan orang tua, silakan register terlebih dahulu."
     )
 
+    if not st.session_state.get("free_trial_identitas_ok", False):
+        st.subheader("Isi Data Sebelum Coba Gratis")
+    
+        with st.form("form_identitas_trial"):
+            nama_trial = st.text_input("Nama")
+            email_trial = st.text_input("Email")
+            no_hp_trial = st.text_input("No HP / WhatsApp")
+    
+            submit_identitas = st.form_submit_button("Mulai Try Out Gratis")
+    
+            if submit_identitas:
+                if not nama_trial or not email_trial or not no_hp_trial:
+                    st.warning("Nama, email, dan no HP wajib diisi.")
+                    return
+    
+                if sudah_pernah_tryout_gratis(email_trial, no_hp_trial):
+                    st.warning(
+                        "Data ini sudah pernah digunakan untuk mencoba try out gratis. "
+                        "Untuk lanjut menggunakan fitur Smart TKA, silakan registrasi berbayar."
+                    )
+    
+                    st.session_state["trial_nama"] = nama_trial
+                    st.session_state["trial_email"] = email_trial
+                    st.session_state["trial_no_hp"] = no_hp_trial
+                    st.session_state["halaman_awal"] = "register_bayar"
+                    st.rerun()
+    
+                st.session_state["trial_nama"] = nama_trial
+                st.session_state["trial_email"] = email_trial
+                st.session_state["trial_no_hp"] = no_hp_trial
+                st.session_state["free_trial_identitas_ok"] = True
+    
+                st.rerun()
+    
+        return
+    
     mapel_dipilih = st.selectbox(
         "Pilih Mapel",
         MAPEL_OPTIONS,
@@ -3455,6 +3732,19 @@ def page_tryout_gratis():
         st.success(f"Nilai demo kamu: {nilai}")
         st.write(f"Benar: **{benar} dari {total} soal**")
 
+        if not st.session_state.get("free_trial_sudah_dicatat", False):
+            catat_tryout_gratis(
+                st.session_state.get("trial_nama", ""),
+                st.session_state.get("trial_email", ""),
+                st.session_state.get("trial_no_hp", ""),
+                mapel_dipilih,
+                nilai,
+                benar,
+                total
+            )
+
+            st.session_state["free_trial_sudah_dicatat"] = True
+
         st.subheader("📌 Ringkasan Jawaban")
         st.dataframe(pd.DataFrame(pembahasan_ringkas), use_container_width=True)
 
@@ -3500,9 +3790,11 @@ def page_tryout_gratis():
             "adaptive learning, dan pantauan orang tua, silakan register."
         )
 
-        if st.button("Saya Tertarik Register"):
+        if st.button("Lanjut Registrasi Berbayar Rp100.000"):
             st.session_state["free_soal_ids"] = []
-            st.success("Silakan buka tab Register Orang Tua untuk membuat akun.")
+            st.session_state["free_trial_identitas_ok"] = False
+            st.session_state["halaman_awal"] = "register_bayar"
+            st.rerun()
 
 
 # =========================
@@ -4287,31 +4579,43 @@ init_db()
 if "username" not in st.session_state:
     catat_pengunjung("Halaman Awal")
 
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "🔐 Login",
-        "🧪 Coba Try Out Gratis",
-        "📝 Register Orang Tua",
-        "🔎 Cek Status Registrasi"
-    ])
+    if st.session_state.get("halaman_awal") == "register_bayar":
+        if st.button("← Kembali ke Halaman Awal"):
+            st.session_state["halaman_awal"] = "awal"
+            st.rerun()
 
-    with tab1:
-        col_login, col_stats = st.columns([2, 1])
+        page_register_bayar()
 
-        with col_login:
-            page_login()
+    else:
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "🔐 Login",
+            "🧪 Coba Try Out Gratis",
+            "💳 Register Berbayar",
+            "📝 Register Orang Tua",
+            "🔎 Cek Status Registrasi"
+        ])
 
-        with col_stats:
-            st.markdown("<div style='height: 32px;' 'text-align: right;'></div>", unsafe_allow_html=True)
-            tampilkan_stats_counter()
+        with tab1:
+            col_login, col_stats = st.columns([2, 1])
 
-    with tab2:
-        page_tryout_gratis()
+            with col_login:
+                page_login()
 
-    with tab3:
-        page_register_ortu()
+            with col_stats:
+                st.markdown("<div style='height: 32px;'></div>", unsafe_allow_html=True)
+                tampilkan_stats_counter()
 
-    with tab4:
-        page_cek_status_registrasi()
+        with tab2:
+            page_tryout_gratis()
+
+        with tab3:
+            page_register_bayar()
+
+        with tab4:
+            page_register_ortu()
+
+        with tab5:
+            page_cek_status_registrasi()
 else:
     st.sidebar.title("📘 TKA Digital")
     st.sidebar.write(f"Login sebagai: **{st.session_state['nama']}**")
