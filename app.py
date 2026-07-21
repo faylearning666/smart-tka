@@ -239,6 +239,9 @@ def init_db():
     conn = connect_db()
     cur = conn.cursor()
 
+    if isinstance(cur, PostgresCursorWrapper):
+        cur.execute("SELECT pg_advisory_xact_lock(%s)", (2026072101,))
+
     # =========================
     # 1. TABEL USER & ROLE
     # =========================
@@ -470,21 +473,47 @@ def init_db():
     )
     """)
 
-    # untuk yang free trial
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS free_trial_log (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        session_id TEXT,
-        nama TEXT,
-        email TEXT,
-        no_hp TEXT,
-        mapel TEXT,
-        nilai REAL,
-        benar INTEGER,
-        total INTEGER,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-    """)
+    # =========================
+    # TABEL FREE TRIAL LOG
+    # =========================
+    
+    if isinstance(cur, PostgresCursorWrapper):
+        # Cek dulu apakah tabel sudah ada di Supabase/PostgreSQL
+        cur.execute("SELECT to_regclass(%s)", ("public.free_trial_log",))
+        table_exists = cur.fetchone()[0] is not None
+    
+        if not table_exists:
+            cur.execute("""
+            CREATE TABLE free_trial_log (
+                id BIGSERIAL PRIMARY KEY,
+                session_id TEXT,
+                nama TEXT,
+                email TEXT,
+                no_hp TEXT,
+                mapel TEXT,
+                nilai REAL,
+                benar INTEGER,
+                total INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """)
+    
+    else:
+        # Versi SQLite lokal
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS free_trial_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT,
+            nama TEXT,
+            email TEXT,
+            no_hp TEXT,
+            mapel TEXT,
+            nilai REAL,
+            benar INTEGER,
+            total INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
 
     # =========================
     # 7. MIGRASI AMAN UNTUK DATABASE LAMA
