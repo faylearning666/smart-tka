@@ -550,8 +550,8 @@ def init_db():
     tambah_kolom_jika_belum_ada(cur, "jadwal_belajar_detail", "topik_spesifik", "TEXT")
     tambah_kolom_jika_belum_ada(cur, "jadwal_belajar_detail", "konteks_kelemahan", "TEXT")
 
-    tambah_kolom_jika_belum_ada(cur, "visitor_log", "is_login", "INTEGER DEFAULT 0")
-    tambah_kolom_jika_belum_ada(cur, "visitor_log", "login_at", "TIMESTAMP")
+    tambah_kolom_jika_belum_ada(cur, "visitor_log", "is_", "INTEGER DEFAULT 0")
+    tambah_kolom_jika_belum_ada(cur, "visitor_log", "_at", "TIMESTAMP")
 
     # tambah untuk pembayaran
     tambah_kolom_jika_belum_ada(cur, "pendaftaran_ortu_siswa", "jenis_pendaftaran", "TEXT")
@@ -755,7 +755,24 @@ def catat_tryout_gratis(nama, email, no_hp, mapel, nilai, benar, total):
 
     conn.commit()
     conn.close()
-    
+
+# =========================
+# helper buat redirect halaman
+# =========================
+def redirect_ke_register_bayar():
+    st.session_state["free_soal_ids"] = []
+    st.session_state["free_trial_identitas_ok"] = False
+    st.session_state["halaman_awal"] = "register_bayar"
+
+    # Bersihkan jawaban radio tryout gratis supaya tidak nyangkut
+    keys_to_delete = [
+        key for key in st.session_state.keys()
+        if str(key).startswith("free_soal_")
+    ]
+
+    for key in keys_to_delete:
+        del st.session_state[key]
+
 # =========================
 # FUNGSI NAIK TURUN LEVEL UNTUK ADAPTIVE LEARNING
 # =========================
@@ -983,7 +1000,7 @@ def ask_llm(prompt):
 # AUTH
 # =========================
 
-def login(username, password):
+def (username, password):
     conn = connect_db()
     cur = conn.cursor()
 
@@ -1870,7 +1887,7 @@ def go_to(menu_name):
 # =========================
 
 def page_login():
-    st.title("📘 TKA Digital MVP + LLM")
+    st.title("📘 SMART TKA Digital")
     st.subheader("Login")
 
     username = st.text_input("Username")
@@ -3829,11 +3846,11 @@ def page_tryout_gratis():
             "adaptive learning, dan pantauan orang tua, silakan register."
         )
 
-        if st.button("Lanjut Registrasi Berbayar Rp100.000"):
-            st.session_state["free_soal_ids"] = []
-            st.session_state["free_trial_identitas_ok"] = False
-            st.session_state["halaman_awal"] = "register_bayar"
-            st.rerun()
+        st.button(
+            "Lanjut Registrasi Berbayar Rp100.000",
+            on_click=redirect_ke_register_bayar,
+            use_container_width=True
+        )
 
 
 # =========================
