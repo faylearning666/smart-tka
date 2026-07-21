@@ -4614,7 +4614,6 @@ def tampilkan_stats_counter():
 # =========================
 
 init_db()
-st.sidebar.success("init_db selesai")
 
 if "username" not in st.session_state:
     catat_pengunjung("Halaman Awal")
