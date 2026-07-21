@@ -239,8 +239,18 @@ def init_db():
     conn = connect_db()
     cur = conn.cursor()
 
+    # Khusus PostgreSQL/Supabase:
+    # cegah init_db nyangkut terlalu lama saat Streamlit rerun/redeploy
     if isinstance(cur, PostgresCursorWrapper):
-        cur.execute("SELECT pg_advisory_xact_lock(%s)", (2026072101,))
+        cur.execute("SET lock_timeout TO '5s'")
+        cur.execute("SET statement_timeout TO '20s'")
+
+        cur.execute("SELECT pg_try_advisory_xact_lock(%s)", (2026072101,))
+        got_lock = cur.fetchone()[0]
+
+        if not got_lock:
+            conn.close()
+            return
 
     # =========================
     # 1. TABEL USER & ROLE
