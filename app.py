@@ -4824,12 +4824,7 @@ def tampilkan_stats_counter():
 
         st.caption("Guest = pengunjung yang membuka aplikasi tapi belum login.")
 
-# =========================
-# sidebar menu fix
-# =========================
-def sync_sidebar_menu():
-    st.session_state["menu"] = st.session_state["sidebar_menu"]
-    
+   
 # =========================
 # MAIN
 # =========================
@@ -4919,6 +4914,12 @@ else:
 
     if st.session_state["sidebar_menu"] not in menu_options:
         st.session_state["sidebar_menu"] = "Dashboard"
+
+    # =========================
+    # sidebar menu fix
+    # =========================
+    def sync_sidebar_menu():
+        st.session_state["menu"] = st.session_state["sidebar_menu"]
     
     menu = st.sidebar.radio(
         "Menu",
