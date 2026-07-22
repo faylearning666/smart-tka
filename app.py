@@ -2061,6 +2061,7 @@ def logout():
 
 def go_to(menu_name):
     st.session_state["menu"] = menu_name
+    st.session_state["sidebar_menu"] = menu_name
     st.rerun()
 
 
@@ -4823,7 +4824,12 @@ def tampilkan_stats_counter():
 
         st.caption("Guest = pengunjung yang membuka aplikasi tapi belum login.")
 
-
+# =========================
+# sidebar menu fix
+# =========================
+def sync_sidebar_menu():
+    st.session_state["menu"] = st.session_state["sidebar_menu"]
+    
 # =========================
 # MAIN
 # =========================
@@ -4918,10 +4924,12 @@ else:
         "Menu",
         menu_options,
         index=menu_options.index(st.session_state["sidebar_menu"]),
-        key="sidebar_menu"
+        key="sidebar_menu",
+        on_change=sync_sidebar_menu
     )
     
-    st.session_state["menu"] = menu
+    st.session_state["menu"] = st.session_state["sidebar_menu"]
+    menu = st.session_state["menu"]
 
     if st.sidebar.button("Logout"):
         logout()
