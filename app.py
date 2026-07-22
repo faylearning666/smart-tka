@@ -2060,8 +2060,8 @@ def logout():
 
 
 def go_to(menu_name):
+    st.session_state["pending_menu"] = menu_name
     st.session_state["menu"] = menu_name
-    st.session_state["sidebar_menu"] = menu_name
     st.rerun()
 
 
@@ -4904,22 +4904,30 @@ else:
         ]
 
     if "menu" not in st.session_state:
-        st.session_state["menu"] = "Dashboard"
+    st.session_state["menu"] = "Dashboard"
 
+    if "pending_menu" in st.session_state:
+        pending_menu = st.session_state["pending_menu"]
+    
+        if pending_menu in menu_options:
+            st.session_state["menu"] = pending_menu
+            st.session_state["sidebar_menu"] = pending_menu
+    
+        del st.session_state["pending_menu"]
+    
     if st.session_state["menu"] not in menu_options:
         st.session_state["menu"] = "Dashboard"
-
+    
     if "sidebar_menu" not in st.session_state:
-        st.session_state["sidebar_menu"] = st.session_state.get("menu", "Dashboard")
-
+        st.session_state["sidebar_menu"] = st.session_state["menu"]
+    
     if st.session_state["sidebar_menu"] not in menu_options:
-        st.session_state["sidebar_menu"] = "Dashboard"
-
-    # =========================
-    # sidebar menu fix
-    # =========================
+        st.session_state["sidebar_menu"] = st.session_state["menu"]
+    
+    
     def sync_sidebar_menu():
         st.session_state["menu"] = st.session_state["sidebar_menu"]
+    
     
     menu = st.sidebar.radio(
         "Menu",
