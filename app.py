@@ -4904,7 +4904,7 @@ else:
         ]
 
     if "menu" not in st.session_state:
-    st.session_state["menu"] = "Dashboard"
+        st.session_state["menu"] = "Dashboard"
 
     if "pending_menu" in st.session_state:
         pending_menu = st.session_state["pending_menu"]
